@@ -175,6 +175,12 @@
     pointer-events: none;
   }
 
+  .field-hint {
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    margin-top: 2px;
+  }
+
   .select-wrap { position: relative; }
   .select-wrap select {
     width: 100%;
@@ -461,14 +467,7 @@
           <option value="all-electric">オール電化</option>
         </select>
       </div>
-    </div>
-
-    <div class="field fee-field" id="gasFeeField">
-      <label for="gasFee">ガス代</label>
-      <div class="input-wrap">
-        <input type="text" id="gasFee" inputmode="numeric" placeholder="0" autocomplete="off">
-        <span class="unit">円</span>
-      </div>
+      <p class="field-hint" id="gasHint">目安 3,500円/月</p>
     </div>
   </section>
 
@@ -590,6 +589,21 @@
       </div>
     </section>
 
+    <section class="settings-section">
+      <h3>新居のガス代目安</h3>
+      <p class="settings-hint">新居側は「ガス」の種類を選ぶだけで、この目安額が自動で使われます(オール電化は常に0円)。</p>
+      <div class="settings-grid">
+        <div class="field">
+          <label for="gasEstLp">LPガス</label>
+          <div class="input-wrap"><input type="text" id="gasEstLp" inputmode="numeric" autocomplete="off"><span class="unit">円</span></div>
+        </div>
+        <div class="field">
+          <label for="gasEstCity">都市ガス</label>
+          <div class="input-wrap"><input type="text" id="gasEstCity" inputmode="numeric" autocomplete="off"><span class="unit">円</span></div>
+        </div>
+      </div>
+    </section>
+
     <button type="button" class="btn-secondary" id="resetSettingsBtn">初期値に戻す</button>
   </form>
 </dialog>
@@ -604,7 +618,8 @@
   var DEFAULT_SETTINGS = {
     current: { rentNet: 24000, kanri: 4000, parking: 10000, internet: 3700, electric: 4500, gas: 6000 },
     allowanceRatePercent: 50,
-    allowanceCap: 50000
+    allowanceCap: 50000,
+    gasEstimates: { lp: 6000, city: 3500 }
   };
 
   function cloneDefaults() { return JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); }
@@ -617,7 +632,8 @@
       return {
         current: Object.assign({}, DEFAULT_SETTINGS.current, parsed.current || {}),
         allowanceRatePercent: typeof parsed.allowanceRatePercent === "number" ? parsed.allowanceRatePercent : DEFAULT_SETTINGS.allowanceRatePercent,
-        allowanceCap: typeof parsed.allowanceCap === "number" ? parsed.allowanceCap : DEFAULT_SETTINGS.allowanceCap
+        allowanceCap: typeof parsed.allowanceCap === "number" ? parsed.allowanceCap : DEFAULT_SETTINGS.allowanceCap,
+        gasEstimates: Object.assign({}, DEFAULT_SETTINGS.gasEstimates, parsed.gasEstimates || {})
       };
     } catch (e) {
       return cloneDefaults();
@@ -654,15 +670,25 @@
 
   /* ---------- New home input fields ---------- */
   var els = {};
-  ["rent", "kanri", "parking", "internetType", "internetFee", "electric", "gasType", "gasFee"].forEach(function (id) {
+  ["rent", "kanri", "parking", "internetType", "internetFee", "electric", "gasType"].forEach(function (id) {
     els[id] = document.getElementById(id);
   });
   var internetFeeField = document.getElementById("internetFeeField");
-  var gasFeeField = document.getElementById("gasFeeField");
 
   function parseNum(el) {
     var digits = (el.value || "").replace(/[^0-9]/g, "");
     return digits ? parseInt(digits, 10) : 0;
+  }
+
+  function gasFeeFor(gasType) {
+    if (gasType === "all-electric") return 0;
+    return gasType === "lp" ? settings.gasEstimates.lp : settings.gasEstimates.city;
+  }
+
+  function updateGasHint() {
+    var gasType = els.gasType.value;
+    var text = gasType === "all-electric" ? "オール電化のため0円" : "目安 " + yen(gasFeeFor(gasType)) + "円/月";
+    setText("gasHint", text);
   }
 
   function attachCommaInput(el, onChange) {
@@ -673,7 +699,7 @@
       recalc();
     });
   }
-  [els.rent, els.kanri, els.parking, els.internetFee, els.electric, els.gasFee].forEach(function (el) {
+  [els.rent, els.kanri, els.parking, els.internetFee, els.electric].forEach(function (el) {
     attachCommaInput(el);
   });
 
@@ -682,7 +708,7 @@
     recalc();
   });
   els.gasType.addEventListener("change", function () {
-    gasFeeField.hidden = els.gasType.value === "all-electric";
+    updateGasHint();
     recalc();
   });
 
@@ -701,11 +727,16 @@
   };
   var rateEl = document.getElementById("allowanceRate");
   var capEl = document.getElementById("allowanceCap");
+  var gasEstEls = {
+    lp: document.getElementById("gasEstLp"),
+    city: document.getElementById("gasEstCity")
+  };
 
   function populateSettingsFields() {
     Object.keys(curEls).forEach(function (key) { setInputValue(curEls[key], settings.current[key]); });
     setInputValue(rateEl, settings.allowanceRatePercent);
     setInputValue(capEl, settings.allowanceCap);
+    Object.keys(gasEstEls).forEach(function (key) { setInputValue(gasEstEls[key], settings.gasEstimates[key]); });
   }
 
   function updateSettingsTotal() {
@@ -725,6 +756,13 @@
   });
   attachCommaInput(rateEl, function (value) { settings.allowanceRatePercent = value; saveSettings(); });
   attachCommaInput(capEl, function (value) { settings.allowanceCap = value; saveSettings(); });
+  Object.keys(gasEstEls).forEach(function (key) {
+    attachCommaInput(gasEstEls[key], function (value) {
+      settings.gasEstimates[key] = value;
+      saveSettings();
+      updateGasHint();
+    });
+  });
 
   openSettingsBtn.addEventListener("click", function () {
     updateSettingsTotal();
@@ -737,6 +775,7 @@
     populateSettingsFields();
     updateSettingsTotal();
     updateBasisCaption();
+    updateGasHint();
     recalc();
   });
 
@@ -747,7 +786,7 @@
     var parking = parseNum(els.parking);
     var internetFee = els.internetType.value === "paid" ? parseNum(els.internetFee) : 0;
     var electric = parseNum(els.electric);
-    var gasFee = els.gasType.value === "all-electric" ? 0 : parseNum(els.gasFee);
+    var gasFee = gasFeeFor(els.gasType.value);
 
     var allowance = Math.min(rent * (settings.allowanceRatePercent / 100), settings.allowanceCap);
     var effectiveRent = rent - allowance;
@@ -787,6 +826,7 @@
 
   populateSettingsFields();
   updateBasisCaption();
+  updateGasHint();
   recalc();
 })();
 </script>
